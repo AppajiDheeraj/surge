@@ -30,12 +30,13 @@ func NewDownloader() *Downloader {
 
 func (d *Downloader) Download(ctx context.Context, rawurl, outPath string, concurrent, verbose bool, md5sum, sha256sum string) error {
 	if concurrent {
-		return d.concurrentDownload(ctx, rawurl, outPath, true, verbose, md5sum, sha256sum)
+		return d.concurrentDownload(ctx, rawurl, outPath, verbose, md5sum, sha256sum)
 	}
 	return d.singleDownload(ctx, rawurl, outPath, verbose, md5sum, sha256sum)
 }
 
 func (d *Downloader) singleDownload(ctx context.Context, rawurl, outPath string, verbose bool, md5sum, sha256sum string) error {
+
 	parsed, err := url.Parse(rawurl) //Parses the URL into parts
 	if err != nil {
 		return err
@@ -51,6 +52,7 @@ func (d *Downloader) singleDownload(ctx context.Context, rawurl, outPath string,
 	if verbose {
 		fmt.Fprintf(os.Stderr, "Initiating single download for URL: %s\n", rawurl)
 	}
+
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawurl, nil) //We use a context so that we can cancel the download whenever we want
 	if err != nil {
 		if verbose {
@@ -129,7 +131,7 @@ func (d *Downloader) singleDownload(ctx context.Context, rawurl, outPath string,
 		n, readErr := tee.Read(buf)
 		if n > 0 {
 			written += int64(n)
-			d.printProgress(written, resp.ContentLength, start, verbose) // Assuming ContentLength is available
+			d.printProgress(written, resp.ContentLength, start, verbose, 0) // 0 active connections for single download
 		}
 		if readErr == io.EOF {
 			break

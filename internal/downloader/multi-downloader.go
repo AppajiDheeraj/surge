@@ -2,9 +2,11 @@ package downloader
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
@@ -20,6 +22,7 @@ const (
 	DynamicWorkerInterval = 200 * time.Millisecond // polling rate for new worker creation
 	MinSegmentSize        = 2 * 1024 * 1024        // 2 MB
 	ProgressReporting     = 250 * time.Millisecond
+	MaxRetries            = 3
 )
 
 type Segment struct {
@@ -50,7 +53,16 @@ and if resp code is 200 or 206
 we consider that a success
 and add this worker to pool
 */
-func (d *Downloader) newWorker(parentCtx context.Context, rawurl string, workers *[]*Worker, workersMu *sync.Mutex, wg *sync.WaitGroup, segmentChan chan *Segment, verbose bool) (bool, error) {
+func (d *Downloader) newWorker(
+	parentCtx context.Context,
+	rawurl string,
+	workers *[]*Worker,
+	workersMu *sync.Mutex,
+	workerWg *sync.WaitGroup,
+	segmentWg *sync.WaitGroup,
+	segmentChan chan *Segment,
+	verbose bool,
+) (bool, error) {
 
 	probeCtx, cancel := context.WithTimeout(parentCtx, 5*time.Second)
 	defer cancel()
@@ -80,10 +92,14 @@ func (d *Downloader) newWorker(parentCtx context.Context, rawurl string, workers
 
 	workersMu.Lock()
 	newWorkerID := len(*workers)
-	worker := &Worker{ID: newWorkerID, Client: d.Client, wg: wg}
+	worker := &Worker{ID: newWorkerID, Client: d.Client, wg: workerWg}
 	*workers = append(*workers, worker)
-	wg.Add(1)
-	go worker.start(parentCtx, rawurl, segmentChan, verbose)
+
+	workerWg.Add(1)
+	go func(w *Worker) {
+		defer workerWg.Done()
+		w.start(parentCtx, rawurl, segmentChan, segmentWg, verbose)
+	}(worker)
 	workersMu.Unlock()
 
 	if verbose {
@@ -92,10 +108,29 @@ func (d *Downloader) newWorker(parentCtx context.Context, rawurl string, workers
 	return true, nil
 }
 
-func (d *Downloader) concurrentDownload(ctx context.Context, rawurl, outPath string, concurrent bool, verbose bool, md5sum, sha256sum string) error {
+func (d *Downloader) concurrentDownload(ctx context.Context, rawurl, outPath string, verbose bool, md5sum, sha256sum string) error {
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodHead, rawurl, nil)
+	parsed, err := url.Parse(rawurl) //Parses the URL into parts
 	if err != nil {
+		return err
+	}
+
+	if parsed.Scheme == "" {
+		if verbose {
+			fmt.Fprintln(os.Stderr, "Error: URL missing scheme (use http:// or https://)")
+		}
+		return errors.New("url missing scheme (use http:// or https://)")
+	} //if the URL does not have a scheme, return an error
+
+	if verbose {
+		fmt.Fprintf(os.Stderr, "Initiating concurrent download for URL: %s\n", rawurl)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawurl, nil) //We use a context so that we can cancel the download whenever we want
+	if err != nil {
+		if verbose {
+			fmt.Fprintf(os.Stderr, "Error creating HTTP request: %v\n", err)
+		}
 		return err
 	}
 
@@ -103,12 +138,25 @@ func (d *Downloader) concurrentDownload(ctx context.Context, rawurl, outPath str
 		"AppleWebKit/537.36 (KHTML, like Gecko) "+
 		"Chrome/120.0.0.0 Safari/537.36") // We set a browser like header to avoid being blocked by some websites
 
-	resp, err := d.Client.Do(req)
+	resp, err := d.Client.Do(req) //Exectes the HTTP request
 	if err != nil {
+		if verbose {
+			fmt.Fprintf(os.Stderr, "Error executing HTTP request: %v\n", err)
+		}
 		return err
 	}
+	defer resp.Body.Close() //Closes the response body when the function returns
 
-	defer resp.Body.Close()
+	if verbose {
+		fmt.Fprintf(os.Stderr, "Received HTTP response with status code: %d\n", resp.StatusCode)
+	}
+
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusPartialContent {
+		if verbose {
+			fmt.Fprintf(os.Stderr, "Error: Unexpected status code: %d\n", resp.StatusCode)
+		}
+		return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+	}
 
 	if resp.Header.Get("Accept-Ranges") != "bytes" {
 		fmt.Println("Server does not support concurrent download, falling back to single thread")
@@ -140,7 +188,7 @@ func (d *Downloader) concurrentDownload(ctx context.Context, rawurl, outPath str
 		end := start + segmentSize - 1
 
 		if i == InitialSegments-1 {
-			end = totalSize
+			end = totalSize - 1
 		}
 
 		partFileName := filepath.Join(tmpDir, fmt.Sprintf("%s.part%d", filename, i))
@@ -152,19 +200,25 @@ func (d *Downloader) concurrentDownload(ctx context.Context, rawurl, outPath str
 		segments[i] = &Segment{ID: i, Start: start, End: end, File: file}
 	}
 
-	var wg sync.WaitGroup
+	var workerWg sync.WaitGroup  // worker goroutines
+	var segmentWg sync.WaitGroup // segment completion tracking
+
 	segmentChan := make(chan *Segment, MaxWorkers)
 	for _, s := range segments {
+		segmentWg.Add(1)
 		segmentChan <- s
 	}
 
 	var workersMu sync.Mutex
 	workers := make([]*Worker, 0, MaxWorkers)
 	for i := 0; i < InitialSegments; i++ {
-		wg.Add(1)
-		worker := &Worker{ID: i, Client: d.Client, wg: &wg}
+		workerWg.Add(1)
+		worker := &Worker{ID: i, Client: d.Client, wg: &workerWg}
 		workers = append(workers, worker)
-		go worker.start(ctx, rawurl, segmentChan, verbose)
+		go func(w *Worker) {
+			defer workerWg.Done()
+			w.start(ctx, rawurl, segmentChan, &segmentWg, verbose)
+		}(worker)
 	}
 
 	startTime := time.Now()
@@ -182,7 +236,10 @@ func (d *Downloader) concurrentDownload(ctx context.Context, rawurl, outPath str
 			segmentsMu.Unlock()
 
 			totalDownloaded = currentDownloaded
-			d.printProgress(totalDownloaded, totalSize, startTime, verbose)
+			workersMu.Lock()
+			activeConnections := len(workers)
+			workersMu.Unlock()
+			d.printProgress(totalDownloaded, totalSize, startTime, verbose, activeConnections)
 			if totalDownloaded >= totalSize {
 				return
 			}
@@ -202,7 +259,7 @@ func (d *Downloader) concurrentDownload(ctx context.Context, rawurl, outPath str
 			}
 
 			workersMu.Lock()
-			newWorkerCreated, err := d.newWorker(ctx, rawurl, &workers, &workersMu, &wg, segmentChan, verbose)
+			newWorkerCreated, err := d.newWorker(ctx, rawurl, &workers, &workersMu, &workerWg, &segmentWg, segmentChan, verbose)
 
 			if err != nil || !newWorkerCreated {
 				continue
@@ -221,7 +278,7 @@ func (d *Downloader) concurrentDownload(ctx context.Context, rawurl, outPath str
 			}
 
 			largestSegment.mu.Lock()
-			midpoint := largestSegment.Start + largestSegment.Downloaded + largestSegment.Remaining()/2
+			midpoint := largestSegment.Start + largestSegment.Downloaded + largestSegment.Remaining()/2 - 1
 			newSegmentEnd := largestSegment.End
 			largestSegment.End = midpoint
 			largestSegment.mu.Unlock()
@@ -237,6 +294,7 @@ func (d *Downloader) concurrentDownload(ctx context.Context, rawurl, outPath str
 
 			newSegment := &Segment{ID: newID, Start: midpoint + 1, End: newSegmentEnd, File: file}
 			segments = append(segments, newSegment)
+			segmentWg.Add(1)
 			segmentChan <- newSegment
 			segmentsMu.Unlock()
 
@@ -247,10 +305,19 @@ func (d *Downloader) concurrentDownload(ctx context.Context, rawurl, outPath str
 		}
 	}()
 
-	wg.Wait()
+	// Wait until all segments have been processed
+	segmentWg.Wait()
+
+	// No more segments will be enqueued; close the channel so workers exit
 	close(segmentChan)
 
-	d.printProgress(totalDownloaded, totalSize, startTime, verbose)
+	// Now wait for worker goroutines to exit
+	workerWg.Wait()
+
+	workersMu.Lock()
+	activeConnections := len(workers)
+	workersMu.Unlock()
+	d.printProgress(totalDownloaded, totalSize, startTime, verbose, activeConnections)
 
 	destPath := outPath
 	if info, err := os.Stat(outPath); err == nil && info.IsDir() {
@@ -306,78 +373,100 @@ func (d *Downloader) concurrentDownload(ctx context.Context, rawurl, outPath str
 
 }
 
-func (w *Worker) start(ctx context.Context, rawurl string, segmentChan <-chan *Segment, verbose bool) {
-	defer w.wg.Done()
+func (w *Worker) start(ctx context.Context, rawurl string, segmentChan <-chan *Segment, segmentWg *sync.WaitGroup, verbose bool) {
+
 	for segment := range segmentChan {
-		err := w.downloadSegment(ctx, rawurl, segment, verbose)
-		if err != nil && verbose {
-			fmt.Fprintf(os.Stderr, "\n[worker %d] error downloading segment %d: %v\n", w.ID, segment.ID, err)
-			// Requeue the segment for another attempt
-			// Delete chunk file to avoid appending to corrupted data
-			// segment.File.Close()
-			// partFileName := segment.File.Name()
-			// os.Remove(partFileName)
-			// newFile, err := os.Create(partFileName)
-			// if err != nil {
-			// 	fmt.Fprintf(os.Stderr, "\n[worker %d] error recreating file for segment %d: %v\n", w.ID, segment.ID, err)
-			// 	continue
-			// }
-			// segment.File = newFile
-			// segment.Downloaded = 0
-			// segmentChan <- segment
+
+		tries := MaxRetries
+		var err error
+		for try := 0; try < tries; try++ {
+
+			err = w.downloadSegment(ctx, rawurl, segment, verbose)
+			if err == nil {
+				break
+			}
+
+			if verbose {
+				fmt.Fprintf(os.Stderr, "\n[worker %d] error downloading segment %d: %v\n", w.ID, segment.ID, err)
+				// Requeue the segment for another attempt
+				// Delete chunk file to avoid appending to corrupted data
+				// segment.File.Close()
+				// partFileName := segment.File.Name()
+				// os.Remove(partFileName)
+				// newFile, err := os.Create(partFileName)
+				// if err != nil {
+				// 	fmt.Fprintf(os.Stderr, "\n[worker %d] error recreating file for segment %d: %v\n", w.ID, segment.ID, err)
+				// 	continue
+				// }
+				// segment.File = newFile
+				// segment.Downloaded = 0
+				// segmentChan <- segment
+			}
+
+			time.Sleep(time.Duration(try) * 200 * time.Millisecond)
 		}
+
+		if err != nil && verbose {
+			fmt.Fprintf(os.Stderr, "\n[worker %d] giving up on segment %d: %v\n", w.ID, segment.ID, err)
+		}
+
+		segmentWg.Done()
 	}
 }
 
 func (w *Worker) downloadSegment(ctx context.Context, rawurl string, segment *Segment, verbose bool) error {
+	startOffset := segment.Start + segment.Downloaded
+	if startOffset > segment.End {
+		// already done
+		return nil
+	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawurl, nil)
 	if err != nil {
 		return err
 	}
-
-	req.Header.Set("Range", fmt.Sprintf("bytes=%d-%d", segment.Start+segment.Downloaded, segment.End))
+	req.Header.Set("Range", fmt.Sprintf("bytes=%d-%d", startOffset, segment.End))
 	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "+
 		"AppleWebKit/537.36 (KHTML, like Gecko) "+
 		"Chrome/120.0.0.0 Safari/537.36") // We set a browser like header to avoid being blocked by some websites
-
-	req.Header.Set("Connection", "close") // Asks server to close connection after request
+	req.Header.Set("Connection", "close")
 
 	resp, err := w.Client.Do(req)
 	if err != nil {
 		return err
 	}
-
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusPartialContent && resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("unexpected status code %d for segment %d", resp.StatusCode, segment.ID)
 	}
 
-	buffer := make([]byte, 32*1024)
-	for {
-		n, err := resp.Body.Read(buffer)
-		if n > 0 {
-			_, writeErr := segment.File.Write(buffer[:n])
-			if writeErr != nil {
-				return writeErr
-			}
-			segment.mu.Lock()
-			segment.Downloaded += int64(n)
-			segment.mu.Unlock()
-		}
-		if err != nil {
-			if err == io.EOF {
-				break
-			}
-			return err
-		}
+	// Seek to the current write position (for resumed segments)
+	if _, err := segment.File.Seek(segment.Downloaded, io.SeekStart); err != nil {
+		return err
 	}
 
+	// limit reader so we don't write past the segment end if server responds with full file
+	bytesToRead := segment.End - startOffset + 1
+	limited := io.LimitReader(resp.Body, bytesToRead)
+
+	// copy and count bytes written
+	written, err := io.Copy(segment.File, limited)
+	if written > 0 {
+		segment.mu.Lock()
+		segment.Downloaded += written
+		segment.mu.Unlock()
+	}
+
+	if err != nil && err != io.EOF {
+		return err
+	}
+
+	// close file on completion of segment
 	return segment.File.Close()
 }
 
-func (d *Downloader) printProgress(written, total int64, start time.Time, verbose bool) {
+func (d *Downloader) printProgress(written, total int64, start time.Time, verbose bool, activeConnections int) {
 	elapsed := time.Since(start).Seconds()
 	if elapsed == 0 {
 		return
@@ -415,8 +504,16 @@ func (d *Downloader) printProgress(written, total int64, start time.Time, verbos
 		if pct > 100 {
 			pct = 100
 		}
-		fmt.Fprintf(os.Stderr, "\r[SURGE] %.2f%% %s/%s (%.1f KiB/s) ETA: %s ", pct, utils.ConvertBytesToHumanReadable(written), utils.ConvertBytesToHumanReadable(total), avgSpeed, eta)
+		fmt.Fprintf(os.Stderr, "\r[SURGE] %.2f%% %s/%s (%.1f KiB/s) ETA: %s", pct, utils.ConvertBytesToHumanReadable(written), utils.ConvertBytesToHumanReadable(total), avgSpeed, eta)
+		if verbose && activeConnections > 0 {
+			fmt.Fprintf(os.Stderr, " Connections: %d", activeConnections)
+		}
+		fmt.Fprint(os.Stderr, " ")
 	} else {
-		fmt.Fprintf(os.Stderr, "\r[SURGE] %s (%.1f KiB/s) ", utils.ConvertBytesToHumanReadable(written), avgSpeed)
+		fmt.Fprintf(os.Stderr, "\r[SURGE] %s (%.1f KiB/s)", utils.ConvertBytesToHumanReadable(written), avgSpeed)
+		if verbose && activeConnections > 0 {
+			fmt.Fprintf(os.Stderr, " Connections: %d", activeConnections)
+		}
+		fmt.Fprint(os.Stderr, " ")
 	}
 }
