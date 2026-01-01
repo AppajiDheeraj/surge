@@ -50,8 +50,34 @@ func (m RootModel) View() string {
 	// === Header ===
 	active, queued, downloaded := m.CalculateStats()
 	headerStats := fmt.Sprintf("Active: %d | Queued: %d | Downloaded: %d", active, queued, downloaded)
+
+	totalSpeed := m.calcTotalSpeed()
+	titleText := fmt.Sprintf("Surge  %s", m.PWD)
+	speedText := fmt.Sprintf("Total Speed: %.2f MB/s", totalSpeed)
+
+	w := m.width - HeaderWidthOffset
+	// Ensure w is positive
+	if w < 0 {
+		w = 0
+	}
+
+	padding := 0
+	if w > len(titleText)+len(speedText) {
+
+		speedStart := (w - len(speedText)) / 2
+		if speedStart > len(titleText) {
+			padding = speedStart - len(titleText)
+		} else {
+			padding = 2 // Minimum spacing
+		}
+	} else {
+		padding = 2
+	}
+
+	headerContent := fmt.Sprintf("%s%s%s", titleText, lipgloss.NewStyle().PaddingLeft(padding).Render(""), speedText)
+
 	header := lipgloss.JoinVertical(lipgloss.Left,
-		HeaderStyle.Width(m.width-HeaderWidthOffset).Render("Surge"),
+		HeaderStyle.Width(w).Render(headerContent),
 		StatsStyle.Render(headerStats),
 	)
 
@@ -107,7 +133,7 @@ func renderCard(d *DownloadModel, selected bool, width int) string {
 		eta = time.Duration(remainingSeconds * float64(time.Second)).Round(time.Second).String()
 	}
 
-	stats := fmt.Sprintf("Speed: %.1f MB/s | ETA: %s | %.0f%%", d.Speed/Megabyte, eta, pct*100)
+	stats := fmt.Sprintf("Speed: %.1f MB/s | Conns: %d | ETA: %s | %.0f%%", d.Speed/Megabyte, d.Connections, eta, pct*100)
 	if d.done {
 		stats = fmt.Sprintf("Completed | Size: %s", utils.ConvertBytesToHumanReadable(d.Total))
 	} else if d.Speed == 0 && d.Downloaded == 0 {
@@ -115,7 +141,7 @@ func renderCard(d *DownloadModel, selected bool, width int) string {
 	}
 
 	content := lipgloss.JoinVertical(lipgloss.Left,
-		CardTitleStyle.Render(d.Filename),
+		CardTitleStyle.Render(truncateString(d.Filename, 200)),
 		progressBar,
 		CardStatsStyle.Render(stats),
 	)
@@ -158,7 +184,7 @@ func renderDetails(m *DownloadModel) string {
 		fmt.Sprintf("ETA:         %s", eta),
 		fmt.Sprintf("Connections: %d", m.Connections),
 		fmt.Sprintf("Elapsed:     %s", m.Elapsed.Round(time.Second)),
-		fmt.Sprintf("URL:         %s", m.URL),
+		fmt.Sprintf("URL:         %s", truncateString(m.URL, 50)),
 	)
 
 	return lipgloss.JoinVertical(lipgloss.Left,
@@ -189,4 +215,12 @@ func (m RootModel) CalculateStats() (active, queued, downloaded int) {
 		}
 	}
 	return
+}
+
+func truncateString(s string, i int) string {
+	runes := []rune(s)
+	if len(runes) > i {
+		return string(runes[:i]) + "..."
+	}
+	return s
 }

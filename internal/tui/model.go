@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"os"
 	"time"
 
 	"github.com/charmbracelet/bubbles/progress"
@@ -60,6 +61,7 @@ type RootModel struct {
 	cursor int
 
 	Pool *downloader.WorkerPool //Works as the download queue
+	PWD  string
 }
 
 // NewDownloadModel creates a new download model with progress state and reporter
@@ -99,12 +101,15 @@ func InitialRootModel() RootModel {
 	// Create channel first so we can pass it to WorkerPool
 	progressChan := make(chan tea.Msg, ProgressChannelBuffer)
 
+	pwd, _ := os.Getwd()
+
 	return RootModel{
 		downloads:    make([]*DownloadModel, 0),
 		inputs:       []textinput.Model{urlInput, pathInput, filenameInput},
 		state:        DashboardState,
 		progressChan: progressChan,
 		Pool:         downloader.NewWorkerPool(progressChan),
+		PWD:          pwd,
 	}
 }
 
