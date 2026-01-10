@@ -221,26 +221,95 @@ func renderFocusedDetails(d *DownloadModel, w int) string {
 		pct = float64(d.Downloaded) / float64(d.Total)
 	}
 
-	// Use your existing Progress Bar but styled
-	d.progress.Width = w - 4
+	// Progress bar with margins
+	progressWidth := w - 12
+	if progressWidth < 20 {
+		progressWidth = 20
+	}
+	d.progress.Width = progressWidth
 	progView := d.progress.ViewAs(pct)
+	pctStr := fmt.Sprintf("%.0f%%", pct*100)
 
-	return lipgloss.JoinVertical(lipgloss.Left,
-		PaneTitleStyle.Render("FILE DETAILS"),
+	// Consistent content width for centering
+	contentWidth := w - 6
+
+	// Section divider
+	divider := lipgloss.NewStyle().
+		Foreground(ColorGray).
+		Render(strings.Repeat("─", contentWidth))
+
+	// Title - centered with margin
+	title := lipgloss.NewStyle().
+		Width(contentWidth).
+		Align(lipgloss.Center).
+		Foreground(ColorNeonCyan).
+		Bold(true).
+		MarginBottom(1).
+		Render("FILE DETAILS")
+
+	// File info section
+	fileInfo := lipgloss.JoinVertical(lipgloss.Left,
+		lipgloss.JoinHorizontal(lipgloss.Left, StatsLabelStyle.Render("Filename:"), StatsValueStyle.Render(truncateString(d.Filename, contentWidth-14))),
 		"",
-		lipgloss.JoinHorizontal(lipgloss.Left, StatsLabelStyle.Render("Filename:"), StatsValueStyle.Render(truncateString(d.Filename, w-15))),
 		lipgloss.JoinHorizontal(lipgloss.Left, StatsLabelStyle.Render("Status:"), StatsValueStyle.Render(getDownloadStatus(d))),
 		lipgloss.JoinHorizontal(lipgloss.Left, StatsLabelStyle.Render("Size:"), StatsValueStyle.Render(fmt.Sprintf("%s / %s", utils.ConvertBytesToHumanReadable(d.Downloaded), utils.ConvertBytesToHumanReadable(d.Total)))),
+	)
+
+	// Progress section with percentage aligned right
+	progressLabel := lipgloss.NewStyle().
+		Foreground(ColorNeonCyan).
+		Bold(true).
+		Render("PROGRESS")
+	progressPct := lipgloss.NewStyle().
+		Foreground(ColorNeonPink).
+		Bold(true).
+		Render(pctStr)
+	progressHeader := lipgloss.JoinHorizontal(lipgloss.Top,
+		progressLabel,
+		lipgloss.NewStyle().Width(contentWidth-lipgloss.Width(progressLabel)-lipgloss.Width(progressPct)).Render(""),
+		progressPct,
+	)
+	progressSection := lipgloss.JoinVertical(lipgloss.Left,
+		progressHeader,
 		"",
-		lipgloss.NewStyle().Foreground(ColorNeonCyan).Render("PROGRESS"),
-		progView,
-		"",
+		lipgloss.NewStyle().MarginLeft(1).Render(progView),
+	)
+
+	// Stats section
+	statsSection := lipgloss.JoinVertical(lipgloss.Left,
 		lipgloss.JoinHorizontal(lipgloss.Left, StatsLabelStyle.Render("Speed:"), StatsValueStyle.Render(fmt.Sprintf("%.2f MB/s", d.Speed/Megabyte))),
 		lipgloss.JoinHorizontal(lipgloss.Left, StatsLabelStyle.Render("Conns:"), StatsValueStyle.Render(fmt.Sprintf("%d", d.Connections))),
 		lipgloss.JoinHorizontal(lipgloss.Left, StatsLabelStyle.Render("Elapsed:"), StatsValueStyle.Render(d.Elapsed.Round(time.Second).String())),
-		"",
-		lipgloss.JoinHorizontal(lipgloss.Left, StatsLabelStyle.Render("URL:"), lipgloss.NewStyle().Foreground(ColorLightGray).Render(truncateString(d.URL, w-10))),
 	)
+
+	// URL section
+	urlSection := lipgloss.JoinVertical(lipgloss.Left,
+		lipgloss.JoinHorizontal(lipgloss.Left, StatsLabelStyle.Render("URL:"), lipgloss.NewStyle().Foreground(ColorLightGray).Render(truncateString(d.URL, contentWidth-14))),
+	)
+
+	// Combine all sections with dividers and spacing
+	content := lipgloss.JoinVertical(lipgloss.Left,
+		title,
+		"",
+		fileInfo,
+		"",
+		divider,
+		"",
+		progressSection,
+		"",
+		divider,
+		"",
+		statsSection,
+		"",
+		divider,
+		"",
+		urlSection,
+	)
+
+	// Wrap in a container with margins
+	return lipgloss.NewStyle().
+		Padding(1, 2).
+		Render(content)
 }
 
 func getDownloadStatus(d *DownloadModel) string {
