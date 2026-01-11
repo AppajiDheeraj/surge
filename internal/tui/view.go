@@ -144,7 +144,7 @@ func (m RootModel) View() string {
 	logContent := m.logViewport.View()
 
 	// Use different border color when focused
-	logBorderColor := ColorNeonCyan
+	logBorderColor := ColorDarkGray
 	if m.logFocused {
 		logBorderColor = ColorNeonPink
 	}
@@ -155,7 +155,7 @@ func (m RootModel) View() string {
 
 	// --- SECTION 2: SPEED GRAPH (Top Right) ---
 	// Use 60 data points for 30 seconds of history (2 samples per second / 0.5s interval)
-	const graphHistoryPoints = 60
+	const graphHistoryPoints = 100
 
 	// Stats box width inside the Network Activity box
 	statsBoxWidth := 18
@@ -308,7 +308,7 @@ func (m RootModel) View() string {
 	// Determine border color for downloads box based on focus
 	downloadsBorderColor := ColorNeonPink
 	if m.logFocused {
-		downloadsBorderColor = ColorGray
+		downloadsBorderColor = ColorDarkGray
 	}
 	listBox := renderBtopBox("Downloads", listInner, leftWidth, listHeight, downloadsBorderColor, true)
 
@@ -321,7 +321,7 @@ func (m RootModel) View() string {
 			lipgloss.NewStyle().Foreground(ColorNeonCyan).Render("No Download Selected"))
 	}
 
-	detailBox := renderBtopBox("File Details", detailContent, rightWidth, detailHeight, ColorGray, true)
+	detailBox := renderBtopBox("File Details", detailContent, rightWidth, detailHeight, ColorDarkGray, true)
 
 	// --- ASSEMBLY ---
 
@@ -506,32 +506,34 @@ func renderBtopBox(title string, content string, width, height int, borderColor 
 		horizontal  = "─"
 		vertical    = "│"
 	)
-
-	innerWidth := width - 2 // Account for left and right borders
+	innerWidth := width - 2
 	if innerWidth < 1 {
 		innerWidth = 1
 	}
 
-	// Build top border with embedded title
 	titleText := fmt.Sprintf(" %s ", title)
-	titleLen := len(titleText)
-	remainingWidth := innerWidth - titleLen - 1 // -1 for the dash after topLeft
+	titleWidth := lipgloss.Width(titleText)
+
+	remainingWidth := innerWidth - titleWidth - 1
 	if remainingWidth < 0 {
 		remainingWidth = 0
 	}
 
 	var topBorder string
+	borderStyler := lipgloss.NewStyle().Foreground(borderColor)
+	titleStyler := lipgloss.NewStyle().Foreground(ColorNeonCyan).Bold(true)
+
 	if titleRight {
-		// Title on the right: ╭─────────────────────────────────── TITLE ─╮
-		topBorder = lipgloss.NewStyle().Foreground(borderColor).Render(topLeft+strings.Repeat(horizontal, remainingWidth)) +
-			lipgloss.NewStyle().Foreground(ColorNeonCyan).Bold(true).Render(titleText) +
-			lipgloss.NewStyle().Foreground(borderColor).Render(horizontal+topRight)
+		// Title on the right
+		topBorder = borderStyler.Render(topLeft+strings.Repeat(horizontal, remainingWidth)) +
+			titleStyler.Render(titleText) +
+			borderStyler.Render(horizontal+topRight)
 	} else {
-		// Title on the left: ╭─ TITLE ─────────────────────────────────╮
-		topBorder = lipgloss.NewStyle().Foreground(borderColor).Render(topLeft+horizontal) +
-			lipgloss.NewStyle().Foreground(ColorNeonCyan).Bold(true).Render(titleText) +
-			lipgloss.NewStyle().Foreground(borderColor).Render(strings.Repeat(horizontal, remainingWidth)) +
-			lipgloss.NewStyle().Foreground(borderColor).Render(topRight)
+		// Title on the left
+		topBorder = borderStyler.Render(topLeft+horizontal) +
+			titleStyler.Render(titleText) +
+			borderStyler.Render(strings.Repeat(horizontal, remainingWidth)) +
+			borderStyler.Render(topRight)
 	}
 
 	// Build bottom border: ╰───────────────────╯
@@ -568,10 +570,5 @@ func renderBtopBox(title string, content string, width, height int, borderColor 
 		wrappedLines = append(wrappedLines, borderStyle.Render(vertical)+line+borderStyle.Render(vertical))
 	}
 
-	// Combine all parts
-	return lipgloss.JoinVertical(lipgloss.Left,
-		topBorder,
-		strings.Join(wrappedLines, "\n"),
-		bottomBorder,
-	)
+	return lipgloss.JoinVertical(lipgloss.Left, topBorder, strings.Join(wrappedLines, "\n"), bottomBorder)
 }
