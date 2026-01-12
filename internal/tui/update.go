@@ -77,8 +77,11 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// Check for duplicate URL in active downloads (if warning enabled)
 		if m.Settings.General.WarnOnDuplicate {
+			normalizedInputURL := strings.TrimRight(msg.URL, "/")
 			for _, d := range m.downloads {
-				if d.URL == msg.URL {
+				normalizedExistingURL := strings.TrimRight(d.URL, "/")
+				if normalizedExistingURL == normalizedInputURL {
+					utils.Debug("Duplicate download detected from extension: %s", msg.URL)
 					m.pendingURL = msg.URL
 					m.pendingPath = path
 					m.pendingFilename = msg.Filename
