@@ -377,15 +377,24 @@ func renderFocusedDetails(d *DownloadModel, w int) string {
 	// Consistent content width for centering
 	contentWidth := w - 6
 
+	// Status Box
+	statusStr := getDownloadStatus(d)
+	statusStyle := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(ColorGray).
+		Width(contentWidth).
+		Align(lipgloss.Center)
+
+	statusBox := statusStyle.Render(statusStr)
+
 	// Section divider
 	divider := lipgloss.NewStyle().
 		Foreground(ColorGray).
 		Render(strings.Repeat("─", contentWidth))
 
-	// File info section - always shown
+	// File info section - Status removed from here
 	fileInfoLines := []string{
 		lipgloss.JoinHorizontal(lipgloss.Left, StatsLabelStyle.Render("Filename:"), StatsValueStyle.Render(truncateString(d.Filename, contentWidth-14))),
-		lipgloss.JoinHorizontal(lipgloss.Left, StatsLabelStyle.Render("Status:"), StatsValueStyle.Render(getDownloadStatus(d))),
 		lipgloss.JoinHorizontal(lipgloss.Left, StatsLabelStyle.Render("Filepath:"), StatsValueStyle.Render(truncateString(d.Destination, contentWidth-14))),
 	}
 
@@ -423,6 +432,7 @@ func renderFocusedDetails(d *DownloadModel, w int) string {
 		)
 
 		content := lipgloss.JoinVertical(lipgloss.Left,
+			statusBox,
 			"",
 			fileInfo,
 			"",
@@ -457,6 +467,7 @@ func renderFocusedDetails(d *DownloadModel, w int) string {
 		)
 
 		content := lipgloss.JoinVertical(lipgloss.Left,
+			statusBox,
 			"",
 			fileInfo,
 			"",
@@ -498,6 +509,7 @@ func renderFocusedDetails(d *DownloadModel, w int) string {
 		elapsedSection := lipgloss.JoinHorizontal(lipgloss.Left, StatsLabelStyle.Render("Elapsed:"), StatsValueStyle.Render(d.Elapsed.Round(time.Second).String()))
 
 		content := lipgloss.JoinVertical(lipgloss.Left,
+			statusBox,
 			"",
 			fileInfo,
 			divider,
@@ -556,8 +568,9 @@ func renderFocusedDetails(d *DownloadModel, w int) string {
 		lipgloss.JoinHorizontal(lipgloss.Left, StatsLabelStyle.Render("Elapsed:"), StatsValueStyle.Render(d.Elapsed.Round(time.Second).String())),
 	)
 
-	// Combine all sections
+	// Combine all sections with status box at top
 	content := lipgloss.JoinVertical(lipgloss.Left,
+		statusBox,
 		"",
 		fileInfo,
 		divider,
