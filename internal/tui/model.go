@@ -119,6 +119,10 @@ type RootModel struct {
 	SettingsIsEditing    bool             // Whether currently editing a value
 	SettingsInput        textinput.Model  // Input for editing string/int values
 	SettingsFileBrowsing bool             // Whether browsing for a directory
+
+	// Selection persistence
+	SelectedDownloadID string // ID of the currently selected download
+	ManualTabSwitch    bool   // Whether the last tab switch was manual
 }
 
 // NewDownloadModel creates a new download model with progress state and reporter

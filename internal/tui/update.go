@@ -122,6 +122,10 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		utils.Debug("Adding download from server: %s", msg.URL)
 		m.Pool.Add(cfg)
 
+		// Focus the new download
+		m.SelectedDownloadID = nextID
+		m.activeTab = TabQueued
+
 		// Update list items
 		m.UpdateListItems()
 		return m, nil
@@ -334,18 +338,21 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Tab switching with Q/W/E
 			if msg.String() == "q" {
 				m.activeTab = TabQueued
+				m.ManualTabSwitch = true
 				m.updateListTitle()
 				m.UpdateListItems()
 				return m, nil
 			}
 			if msg.String() == "w" {
 				m.activeTab = TabActive
+				m.ManualTabSwitch = true
 				m.updateListTitle()
 				m.UpdateListItems()
 				return m, nil
 			}
 			if msg.String() == "e" {
 				m.activeTab = TabDone
+				m.ManualTabSwitch = true
 				m.updateListTitle()
 				m.UpdateListItems()
 				return m, nil
@@ -374,6 +381,7 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			if msg.String() == "tab" {
 				m.activeTab = (m.activeTab + 1) % 3
+				m.ManualTabSwitch = true
 				m.updateListTitle()
 				m.UpdateListItems()
 				return m, nil
@@ -579,6 +587,9 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				utils.Debug("Adding to Queue")
 				m.Pool.Add(cfg)
 
+				m.SelectedDownloadID = nextID
+				m.activeTab = TabQueued
+
 				m.UpdateListItems()
 				return m, nil
 			}
@@ -705,6 +716,8 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				m.Pool.Add(cfg)
 				m.state = DashboardState
+				m.SelectedDownloadID = nextID
+				m.activeTab = TabQueued
 				m.UpdateListItems()
 				return m, nil
 			}
@@ -762,6 +775,8 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.Pool.Add(cfg)
 
 				m.state = DashboardState
+				m.SelectedDownloadID = nextID
+				m.activeTab = TabQueued
 				m.UpdateListItems()
 				return m, nil
 			}

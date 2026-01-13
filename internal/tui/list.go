@@ -211,12 +211,82 @@ func NewDownloadList(width, height int) list.Model {
 
 // UpdateListItems updates the list with filtered downloads based on active tab
 func (m *RootModel) UpdateListItems() {
+	// If the user manually switched tabs, don't try to preserve/follow selection
+	if m.ManualTabSwitch {
+		m.ManualTabSwitch = false
+		filtered := m.getFilteredDownloads()
+		items := make([]list.Item, len(filtered))
+		for i, d := range filtered {
+			items[i] = DownloadItem{download: d}
+		}
+		m.list.SetItems(items)
+		// Reset cursor to top when manually switching tabs (standard behavior)
+		m.list.Select(0)
+		return
+	}
+
+	// Capture currently selected ID if we don't have a forced one
+	targetID := m.SelectedDownloadID
+	if targetID == "" {
+		if d := m.GetSelectedDownload(); d != nil {
+			targetID = d.ID
+		}
+	}
+
 	filtered := m.getFilteredDownloads()
 	items := make([]list.Item, len(filtered))
 	for i, d := range filtered {
 		items[i] = DownloadItem{download: d}
 	}
 	m.list.SetItems(items)
+
+	// Restore selection
+	found := false
+	if targetID != "" {
+		for i, item := range items {
+			if di, ok := item.(DownloadItem); ok {
+				if di.download.ID == targetID {
+					m.list.Select(i)
+					found = true
+					break
+				}
+			}
+		}
+
+		// If we wanted to select something but it's not here, it might be in another tab
+		if !found {
+			// Find the download globally
+			for _, d := range m.downloads {
+				if d.ID == targetID {
+					newTab := -1
+					if d.done {
+						newTab = TabDone
+					} else if d.Speed > 0 {
+						newTab = TabActive
+					} else {
+						newTab = TabQueued
+					}
+
+					// If it belongs to a different tab, switch to it
+					if newTab != -1 && newTab != m.activeTab {
+						m.activeTab = newTab
+						m.updateListTitle()
+
+						// Force selection for the recursive call
+						m.SelectedDownloadID = targetID
+
+						// Recurse to update list for the new tab
+						m.UpdateListItems()
+						return
+					}
+					break
+				}
+			}
+		}
+	}
+
+	// Reset forced selection
+	m.SelectedDownloadID = ""
 }
 
 // GetSelectedDownload returns the currently selected download from the list
