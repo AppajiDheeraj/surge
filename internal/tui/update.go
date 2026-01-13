@@ -465,9 +465,17 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 							// Resume: create config and add to pool
 							d.paused = false
 							d.state.Resume()
+							// Use the download's actual destination directory
+							outputPath := filepath.Dir(d.Destination)
+							if outputPath == "" || outputPath == "." {
+								outputPath = m.Settings.General.DefaultDownloadDir
+								if outputPath == "" {
+									outputPath = m.PWD
+								}
+							}
 							cfg := downloader.DownloadConfig{
 								URL:        d.URL,
-								OutputPath: m.PWD, // Will be resolved in TUIDownload
+								OutputPath: outputPath,
 								ID:         d.ID,
 								Filename:   d.Filename,
 								Verbose:    false,
@@ -569,7 +577,10 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				path := m.inputs[1].Value()
 				if path == "" {
-					path = "."
+					path = m.Settings.General.DefaultDownloadDir
+					if path == "" {
+						path = "."
+					}
 				}
 				filename := m.inputs[2].Value()
 
