@@ -10,3 +10,6 @@ logs/
 downloads/
 *.pyc
 grab_bench*
+# Added by goreleaser init:
+dist/
+build/
