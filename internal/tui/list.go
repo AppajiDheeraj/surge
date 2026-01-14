@@ -94,8 +94,8 @@ func newDelegateKeyMap() *delegateKeyMap {
 			key.WithHelp("p", "pause/resume"),
 		),
 		delete: key.NewBinding(
-			key.WithKeys("d", "x"),
-			key.WithHelp("d/x", "delete"),
+			key.WithKeys("x"),
+			key.WithHelp("x", "delete"),
 		),
 	}
 }

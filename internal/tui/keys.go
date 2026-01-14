@@ -136,7 +136,7 @@ var Keys = KeyMap{
 			key.WithHelp("p", "pause/resume"),
 		),
 		Delete: key.NewBinding(
-			key.WithKeys("x", "d"),
+			key.WithKeys("x"),
 			key.WithHelp("x", "delete"),
 		),
 		Settings: key.NewBinding(
@@ -250,7 +250,7 @@ var Keys = KeyMap{
 			key.WithHelp("↓/j", "down"),
 		),
 		Delete: key.NewBinding(
-			key.WithKeys("x", "d"),
+			key.WithKeys("x"),
 			key.WithHelp("x", "remove"),
 		),
 		Close: key.NewBinding(

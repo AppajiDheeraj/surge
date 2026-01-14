@@ -491,6 +491,11 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 							_ = os.Remove(dl.Destination + downloader.IncompleteSuffix)
 						}
 
+						// Remove completed downloads from master list (for Done tab persistence)
+						if dl.done && dl.URL != "" {
+							_ = downloader.RemoveFromMasterList(downloader.URLHash(dl.URL))
+						}
+
 						// Remove from list
 						m.downloads = append(m.downloads[:realIdx], m.downloads[realIdx+1:]...)
 					}
