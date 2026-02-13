@@ -6,7 +6,7 @@
 [![Release](https://img.shields.io/github/v/release/surge-downloader/surge?style=flat-square&color=blue)](https://github.com/surge-downloader/surge/releases)
 [![Go Version](https://img.shields.io/github/go-mod/go-version/surge-downloader/surge?style=flat-square&color=cyan)](go.mod)
 [![License](https://img.shields.io/badge/License-MIT-grey.svg?style=flat-square)](LICENSE)
-[![X (formerly Twitter) Follow](https://img.shields.io/twitter/follow/SurgeDownloader?style=social)](https://x.com/SurgeDownloader)
+[![BuyMeACoffee](https://raw.githubusercontent.com/pachadotdev/buymeacoffee-badges/main/bmc-violet.svg)](https://www.buymeacoffee.com/surge.downloader)
 [![Stars](https://img.shields.io/github/stars/surge-downloader/surge?style=social)](https://github.com/surge-downloader/surge/stargazers)
 
 **Blazing fast, open-source TUI download manager built in Go.**
